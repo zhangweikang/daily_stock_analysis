@@ -295,7 +295,10 @@ class MarketAnalyzer:
             }
             
             # 根据 analyzer 使用的 API 类型调用
-            if self.analyzer._use_openai:
+            if self.analyzer._use_anthropic:
+                # 使用 Anthropic API (Claude)
+                review = self.analyzer._call_anthropic_api(prompt, generation_config)
+            elif self.analyzer._use_openai:
                 # 使用 OpenAI 兼容 API
                 review = self.analyzer._call_openai_api(prompt, generation_config)
             else:

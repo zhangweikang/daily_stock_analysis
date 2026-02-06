@@ -35,6 +35,7 @@ from sqlalchemy import (
     select,
     and_,
     desc,
+    delete,
 )
 from sqlalchemy.orm import (
     declarative_base,
@@ -691,6 +692,85 @@ class DatabaseManager:
             results = session.execute(data_query).scalars().all()
             
             return list(results), total
+    
+    def delete_analysis(self, query_id: str) -> bool:
+        """
+        删除分析历史记录
+        
+        同时删除关联的新闻情报
+        
+        Args:
+            query_id: 分析记录唯一标识
+            
+        Returns:
+            是否删除成功
+        """
+        with self.get_session() as session:
+            try:
+                # 删除关联的新闻情报
+                session.execute(
+                    delete(NewsIntel).where(NewsIntel.query_id == query_id)
+                )
+                
+                # 删除分析历史记录
+                result = session.execute(
+                    delete(AnalysisHistory).where(AnalysisHistory.query_id == query_id)
+                )
+                
+                session.commit()
+                deleted_count = result.rowcount
+                logger.info(f"删除分析记录成功: query_id={query_id}, 删除 {deleted_count} 条")
+                return deleted_count > 0
+                
+            except Exception as e:
+                session.rollback()
+                logger.error(f"删除分析记录失败: {e}")
+                return False
+    
+    def delete_analysis_by_code(self, code: str, exclude_query_id: Optional[str] = None) -> int:
+        """
+        删除指定股票代码的分析历史记录
+        
+        Args:
+            code: 股票代码
+            exclude_query_id: 排除的 query_id（保留最新这条）
+            
+        Returns:
+            删除的记录数
+        """
+        with self.get_session() as session:
+            try:
+                conditions = [AnalysisHistory.code == code]
+                if exclude_query_id:
+                    conditions.append(AnalysisHistory.query_id != exclude_query_id)
+                
+                # 先获取要删除的 query_ids
+                query_ids = session.execute(
+                    select(AnalysisHistory.query_id).where(and_(*conditions))
+                ).scalars().all()
+                
+                if not query_ids:
+                    return 0
+                
+                # 删除关联的新闻情报
+                session.execute(
+                    delete(NewsIntel).where(NewsIntel.query_id.in_(query_ids))
+                )
+                
+                # 删除分析历史记录
+                result = session.execute(
+                    delete(AnalysisHistory).where(and_(*conditions))
+                )
+                
+                session.commit()
+                deleted_count = result.rowcount
+                logger.info(f"按代码删除分析记录成功: code={code}, 删除 {deleted_count} 条")
+                return deleted_count
+                
+            except Exception as e:
+                session.rollback()
+                logger.error(f"按代码删除分析记录失败: {e}")
+                return 0
     
     def get_data_range(
         self, 

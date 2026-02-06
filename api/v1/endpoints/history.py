@@ -113,6 +113,58 @@ def get_history_list(
         )
 
 
+@router.delete(
+    "/{query_id}",
+    response_model=dict,
+    responses={
+        200: {"description": "删除成功"},
+        404: {"description": "记录不存在", "model": ErrorResponse},
+        500: {"description": "服务器错误", "model": ErrorResponse},
+    },
+    summary="删除历史记录",
+    description="根据 query_id 删除历史分析记录及关联的新闻情报"
+)
+def delete_history(
+    query_id: str,
+    db_manager: DatabaseManager = Depends(get_database_manager)
+) -> dict:
+    """
+    删除历史记录
+    
+    Args:
+        query_id: 分析记录唯一标识
+        db_manager: 数据库管理器依赖
+        
+    Returns:
+        删除结果
+    """
+    try:
+        success = db_manager.delete_analysis(query_id)
+        
+        if not success:
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    "error": "not_found",
+                    "message": f"未找到 query_id={query_id} 的分析记录"
+                }
+            )
+        
+        return {"success": True, "message": "删除成功"}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"删除历史记录失败: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": "internal_error",
+                "message": f"删除历史记录失败: {str(e)}"
+            }
+        )
+
+
 @router.get(
     "/{query_id}",
     response_model=AnalysisReport,

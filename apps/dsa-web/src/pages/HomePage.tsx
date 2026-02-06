@@ -3,12 +3,15 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import type { HistoryItem, AnalysisReport, TaskInfo } from '../types/analysis';
 import { historyApi } from '../api/history';
 import { analysisApi, DuplicateTaskError } from '../api/analysis';
+import { ocrApi } from '../api/ocr';
+import { marketApi } from '../api/market';
 import { validateStockCode } from '../utils/validation';
 import { getRecentStartDate, toDateInputValue } from '../utils/format';
 import { useAnalysisStore } from '../stores/analysisStore';
 import { ReportSummary } from '../components/report';
 import { HistoryList } from '../components/history';
 import { TaskPanel } from '../components/tasks';
+import { ImageUploader, StockCodeManager } from '../components/common';
 import { useTaskStream } from '../hooks';
 
 /**
@@ -38,6 +41,15 @@ const HomePage: React.FC = () => {
   // 任务队列状态
   const [activeTasks, setActiveTasks] = useState<TaskInfo[]>([]);
   const [duplicateError, setDuplicateError] = useState<string | null>(null);
+
+  // OCR 状态
+  const [recognizedCodes, setRecognizedCodes] = useState<string[]>([]);
+  const [isRecognizing, setIsRecognizing] = useState(false);
+  const [ocrError, setOcrError] = useState<string | null>(null);
+  const [isBatchAnalyzing, setIsBatchAnalyzing] = useState(false);
+
+  // 大盘分析状态
+  const [isMarketAnalyzing, setIsMarketAnalyzing] = useState(false);
 
   // 用于跟踪当前分析请求，避免竞态条件
   const analysisRequestIdRef = useRef<number>(0);
@@ -215,6 +227,112 @@ const HomePage: React.FC = () => {
     }
   };
 
+  // OCR 图片上传处理
+  const handleImageUpload = async (base64: string, mimeType: string) => {
+    setIsRecognizing(true);
+    setOcrError(null);
+    
+    try {
+      const result = await ocrApi.recognize(base64, mimeType);
+      
+      if (result.success && result.codes.length > 0) {
+        // 合并去重
+        setRecognizedCodes((prev) => {
+          const combined = [...prev, ...result.codes];
+          return [...new Set(combined)];
+        });
+      } else if (!result.success) {
+        setOcrError(result.error || '识别失败');
+      } else {
+        setOcrError('未识别到股票代码');
+      }
+    } catch (err) {
+      console.error('OCR failed:', err);
+      setOcrError(err instanceof Error ? err.message : '识别失败');
+    } finally {
+      setIsRecognizing(false);
+    }
+  };
+
+  // 批量分析处理
+  const handleBatchAnalyze = async () => {
+    if (recognizedCodes.length === 0 || isBatchAnalyzing) return;
+    
+    setIsBatchAnalyzing(true);
+    
+    for (const code of recognizedCodes) {
+      try {
+        await analysisApi.analyzeAsync({
+          stockCode: code,
+          reportType: 'detailed',
+        });
+      } catch (err) {
+        // 忽略重复任务错误，继续处理其他代码
+        if (!(err instanceof DuplicateTaskError)) {
+          console.error(`Analysis failed for ${code}:`, err);
+        }
+      }
+    }
+    
+    // 清空已识别的代码
+    setRecognizedCodes([]);
+    setIsBatchAnalyzing(false);
+  };
+
+  // 大盘分析
+  const handleMarketReview = async () => {
+    if (isMarketAnalyzing) return;
+    
+    setIsMarketAnalyzing(true);
+    try {
+      const result = await marketApi.review();
+      if (result.success && result.report) {
+        // 可以显示报告结果，这里简单提示成功
+        alert('大盘分析完成！\n\n' + result.report.substring(0, 500) + '...');
+      } else {
+        setStoreError(result.error || '大盘分析失败');
+      }
+    } catch (err) {
+      console.error('Market review failed:', err);
+      setStoreError(err instanceof Error ? err.message : '大盘分析失败');
+    } finally {
+      setIsMarketAnalyzing(false);
+    }
+  };
+
+  // 删除历史记录
+  const handleDeleteHistory = async (queryId: string) => {
+    try {
+      await historyApi.delete(queryId);
+      // 从列表中移除
+      setHistoryItems((prev) => prev.filter((item) => item.queryId !== queryId));
+      // 如果删除的是当前显示的报告，清空报告
+      if (selectedReport?.meta.queryId === queryId) {
+        setSelectedReport(null);
+      }
+    } catch (err) {
+      console.error('Delete failed:', err);
+      setStoreError(err instanceof Error ? err.message : '删除失败');
+    }
+  };
+
+  // 重新分析
+  const handleReanalyze = async (stockCode: string) => {
+    try {
+      await analysisApi.analyzeAsync({
+        stockCode,
+        reportType: 'detailed',
+      });
+    } catch (err) {
+      if (err instanceof DuplicateTaskError) {
+        setDuplicateError(`股票 ${stockCode} 正在分析中，请等待完成`);
+      } else {
+        console.error('Reanalyze failed:', err);
+        setStoreError(err instanceof Error ? err.message : '重新分析失败');
+      }
+    }
+  };
+
   // 回车提交
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && stockCode && !isAnalyzing) {
@@ -265,6 +383,49 @@ const HomePage: React.FC = () => {
               '分析'
             )}
           </button>
+          <button
+            type="button"
+            onClick={handleMarketReview}
+            disabled={isMarketAnalyzing}
+            className="btn-secondary flex items-center gap-1.5 whitespace-nowrap"
+            title="大盘复盘分析"
+          >
+            {isMarketAnalyzing ? (
+              <>
+                <svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                </svg>
+                分析中
+              </>
+            ) : (
+              <>
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                大盘分析
+              </>
+            )}
+          </button>
+        </div>
+
+        {/* OCR 图片上传区域 */}
+        <div className="max-w-2xl mt-2">
+          <ImageUploader
+            onImageUpload={handleImageUpload}
+            isLoading={isRecognizing}
+          />
+          
+          {ocrError && (
+            <p className="text-xs text-danger mt-1">{ocrError}</p>
+          )}
+          
+          <StockCodeManager
+            codes={recognizedCodes}
+            onCodesChange={setRecognizedCodes}
+            onAnalyze={handleBatchAnalyze}
+            isAnalyzing={isBatchAnalyzing}
+          />
         </div>
       </header>
 
@@ -284,6 +445,8 @@ const HomePage: React.FC = () => {
             selectedQueryId={selectedReport?.meta.queryId}
             onItemClick={handleHistoryClick}
             onLoadMore={handleLoadMore}
+            onDelete={handleDeleteHistory}
+            onReanalyze={handleReanalyze}
             className="max-h-[62vh] overflow-hidden"
           />
         </div>

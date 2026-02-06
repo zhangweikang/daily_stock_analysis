@@ -8,3 +8,5 @@ export * from './JsonViewer';
 export * from './Select';
 export * from './Badge';
 export * from './Pagination';
+export { default as ImageUploader } from './ImageUploader';
+export { default as StockCodeManager } from './StockCodeManager';

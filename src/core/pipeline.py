@@ -291,9 +291,14 @@ class StockAnalysisPipeline:
                 result.current_price = realtime_data.get('price')
                 result.change_pct = realtime_data.get('change_pct')
 
-            # Step 8: 保存分析历史记录
+            # Step 8: 保存分析历史记录（先删除同代码旧记录）
             if result:
                 try:
+                    # 删除同一股票代码的旧记录（保持历史列表整洁）
+                    deleted_count = self.db.delete_analysis_by_code(code)
+                    if deleted_count > 0:
+                        logger.info(f"[{code}] 删除 {deleted_count} 条旧分析记录")
+                    
                     context_snapshot = self._build_context_snapshot(
                         enhanced_context=enhanced_context,
                         news_content=news_context,

@@ -1,5 +1,5 @@
 import type React from 'react';
-import { useRef, useCallback, useEffect } from 'react';
+import { useRef, useCallback, useEffect, useState } from 'react';
 import type { HistoryItem } from '../../types/analysis';
 import { getSentimentColor } from '../../types/analysis';
 import { formatDateTime } from '../../utils/format';
@@ -12,6 +12,8 @@ interface HistoryListProps {
   selectedQueryId?: string;
   onItemClick: (queryId: string) => void;
   onLoadMore: () => void;
+  onDelete?: (queryId: string) => void;
+  onReanalyze?: (stockCode: string) => void;
   className?: string;
 }
 
@@ -27,10 +29,13 @@ export const HistoryList: React.FC<HistoryListProps> = ({
   selectedQueryId,
   onItemClick,
   onLoadMore,
+  onDelete,
+  onReanalyze,
   className = '',
 }) => {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const loadMoreTriggerRef = useRef<HTMLDivElement>(null);
+  const [hoveredItemId, setHoveredItemId] = useState<string | null>(null);
 
   // 使用 IntersectionObserver 检测滚动到底部
   const handleObserver = useCallback(
@@ -66,6 +71,20 @@ export const HistoryList: React.FC<HistoryListProps> = ({
     };
   }, [handleObserver]);
 
+  const handleDelete = (e: React.MouseEvent, queryId: string) => {
+    e.stopPropagation();
+    if (onDelete && confirm('确定要删除这条记录吗？')) {
+      onDelete(queryId);
+    }
+  };
+
+  const handleReanalyze = (e: React.MouseEvent, stockCode: string) => {
+    e.stopPropagation();
+    if (onReanalyze) {
+      onReanalyze(stockCode);
+    }
+  };
+
   return (
     <aside className={`glass-card overflow-hidden flex flex-col ${className}`}>
       <div ref={scrollContainerRef} className="p-3 flex-1 overflow-y-auto">
@@ -87,53 +106,89 @@ export const HistoryList: React.FC<HistoryListProps> = ({
         ) : (
           <div className="space-y-1.5">
             {items.map((item) => (
-              <button
+              <div
                 key={item.queryId}
-                type="button"
-                onClick={() => onItemClick(item.queryId)}
-                className={`history-item w-full text-left ${selectedQueryId === item.queryId ? 'active' : ''
-                  }`}
+                className="relative"
+                onMouseEnter={() => setHoveredItemId(item.queryId)}
+                onMouseLeave={() => setHoveredItemId(null)}
               >
-                <div className="flex items-center gap-2 w-full">
-                  {/* 情感分数指示条 */}
-                  {item.sentimentScore !== undefined && (
-                    <span
-                      className="w-0.5 h-8 rounded-full flex-shrink-0"
-                      style={{
-                        backgroundColor: getSentimentColor(item.sentimentScore),
-                        boxShadow: `0 0 6px ${getSentimentColor(item.sentimentScore)}40`
-                      }}
-                    />
-                  )}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between gap-1.5">
-                      <span className="font-medium text-white truncate text-xs">
-                        {item.stockName || item.stockCode}
-                      </span>
-                      {item.sentimentScore !== undefined && (
-                        <span
-                          className="text-xs font-mono font-semibold px-1 py-0.5 rounded"
-                          style={{
-                            color: getSentimentColor(item.sentimentScore),
-                            backgroundColor: `${getSentimentColor(item.sentimentScore)}15`
-                          }}
-                        >
-                          {item.sentimentScore}
+                <button
+                  type="button"
+                  onClick={() => onItemClick(item.queryId)}
+                  className={`history-item w-full text-left ${selectedQueryId === item.queryId ? 'active' : ''
+                    }`}
+                >
+                  <div className="flex items-center gap-2 w-full">
+                    {/* 情感分数指示条 */}
+                    {item.sentimentScore !== undefined && (
+                      <span
+                        className="w-0.5 h-8 rounded-full flex-shrink-0"
+                        style={{
+                          backgroundColor: getSentimentColor(item.sentimentScore),
+                          boxShadow: `0 0 6px ${getSentimentColor(item.sentimentScore)}40`
+                        }}
+                      />
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between gap-1.5">
+                        <span className="font-medium text-white truncate text-xs">
+                          {item.stockName || item.stockCode}
                         </span>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-1.5 mt-0.5">
-                      <span className="text-xs text-muted font-mono">
-                        {item.stockCode}
-                      </span>
-                      <span className="text-xs text-muted/50">·</span>
-                      <span className="text-xs text-muted">
-                        {formatDateTime(item.createdAt)}
-                      </span>
+                        {item.sentimentScore !== undefined && (
+                          <span
+                            className="text-xs font-mono font-semibold px-1 py-0.5 rounded"
+                            style={{
+                              color: getSentimentColor(item.sentimentScore),
+                              backgroundColor: `${getSentimentColor(item.sentimentScore)}15`
+                            }}
+                          >
+                            {item.sentimentScore}
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1.5 mt-0.5">
+                        <span className="text-xs text-muted font-mono">
+                          {item.stockCode}
+                        </span>
+                        <span className="text-xs text-muted/50">·</span>
+                        <span className="text-xs text-muted">
+                          {formatDateTime(item.createdAt)}
+                        </span>
+                      </div>
                     </div>
                   </div>
-                </div>
-              </button>
+                </button>
+                
+                {/* 操作按钮（悬停显示） */}
+                {hoveredItemId === item.queryId && (onDelete || onReanalyze) && (
+                  <div className="absolute right-1 top-1/2 -translate-y-1/2 flex gap-1 bg-card/90 backdrop-blur-sm rounded px-1 py-0.5">
+                    {onReanalyze && (
+                      <button
+                        type="button"
+                        onClick={(e) => handleReanalyze(e, item.stockCode)}
+                        className="p-1 text-cyan hover:text-cyan-light hover:bg-cyan/10 rounded transition-colors"
+                        title="重新分析"
+                      >
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                        </svg>
+                      </button>
+                    )}
+                    {onDelete && (
+                      <button
+                        type="button"
+                        onClick={(e) => handleDelete(e, item.queryId)}
+                        className="p-1 text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded transition-colors"
+                        title="删除记录"
+                      >
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
             ))}
 
             {/* 加载更多触发器 */}

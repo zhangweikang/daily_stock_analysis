@@ -67,4 +67,13 @@ export const historyApi = {
       items: (data.items || []).map(item => toCamelCase<NewsIntelItem>(item)),
     };
   },
+
+  /**
+   * 删除历史记录
+   * @param queryId 分析记录唯一标识
+   */
+  delete: async (queryId: string): Promise<{ success: boolean; message: string }> => {
+    const response = await apiClient.delete<Record<string, unknown>>(`/api/v1/history/${queryId}`);
+    return response.data as { success: boolean; message: string };
+  },
 };

@@ -63,6 +63,13 @@ class Config:
     openai_model: str = "gpt-4o-mini"  # OpenAI 兼容模型名称
     openai_temperature: float = 0.7  # OpenAI 温度参数（0.0-2.0，默认0.7）
     
+    # Anthropic API（Claude 原生接口）
+    anthropic_api_key: Optional[str] = None
+    anthropic_base_url: Optional[str] = None  # 可选，默认 https://api.anthropic.com
+    anthropic_model: str = "claude-sonnet-4-20250514"  # Claude 模型名称
+    anthropic_temperature: float = 0.7  # 温度参数（0.0-1.0）
+    anthropic_max_tokens: int = 8192  # 最大输出 token 数
+
     # === 搜索引擎配置（支持多 Key 负载均衡）===
     bocha_api_keys: List[str] = field(default_factory=list)  # Bocha API Keys
     tavily_api_keys: List[str] = field(default_factory=list)  # Tavily API Keys
@@ -337,6 +344,12 @@ class Config:
             openai_base_url=os.getenv('OPENAI_BASE_URL'),
             openai_model=os.getenv('OPENAI_MODEL', 'gpt-4o-mini'),
             openai_temperature=float(os.getenv('OPENAI_TEMPERATURE', '0.7')),
+            # Anthropic API
+            anthropic_api_key=os.getenv('ANTHROPIC_API_KEY'),
+            anthropic_base_url=os.getenv('ANTHROPIC_BASE_URL'),
+            anthropic_model=os.getenv('ANTHROPIC_MODEL', 'claude-sonnet-4-20250514'),
+            anthropic_temperature=float(os.getenv('ANTHROPIC_TEMPERATURE', '0.7')),
+            anthropic_max_tokens=int(os.getenv('ANTHROPIC_MAX_TOKENS', '8192')),
             bocha_api_keys=bocha_api_keys,
             tavily_api_keys=tavily_api_keys,
             brave_api_keys=brave_api_keys,
@@ -468,8 +481,8 @@ class Config:
         if not self.tushare_token:
             warnings.append("提示：未配置 Tushare Token，将使用其他数据源")
         
-        if not self.gemini_api_key and not self.openai_api_key:
-            warnings.append("警告：未配置 Gemini 或 OpenAI API Key，AI 分析功能将不可用")
+        if not self.gemini_api_key and not self.openai_api_key and not self.anthropic_api_key:
+            warnings.append("警告：未配置 Gemini 或OpenAI 或 Anthropic API Key，AI 分析功能将不可用")
         elif not self.gemini_api_key:
             warnings.append("提示：未配置 Gemini API Key，将使用 OpenAI 兼容 API")
         
